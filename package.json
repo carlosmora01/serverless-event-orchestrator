@@ -1,0 +1,68 @@
+{
+  "name": "serverless-event-orchestrator",
+  "version": "1.0.0",
+  "description": "A lightweight, type-safe event dispatcher and middleware orchestrator for AWS Lambda. Designed for hexagonal architectures with support for segmented routing (public, private, backoffice), Cognito User Pool validation, and built-in infrastructure middlewares.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./http": {
+      "import": "./dist/http/index.js",
+      "require": "./dist/http/index.js",
+      "types": "./dist/http/index.d.ts"
+    },
+    "./identity": {
+      "import": "./dist/identity/index.js",
+      "require": "./dist/identity/index.js",
+      "types": "./dist/identity/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watchAll",
+    "test:coverage": "jest --coverage",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build && npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carlosmora01/serverless-event-orchestrator.git"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "serverless",
+    "eventbridge",
+    "apigateway",
+    "sqs",
+    "router",
+    "dispatcher",
+    "cognito",
+    "middleware",
+    "hexagonal-architecture"
+  ],
+  "author": "Carlos Mora",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/carlosmora01/serverless-event-orchestrator/issues"
+  },
+  "homepage": "https://github.com/carlosmora01/serverless-event-orchestrator#readme",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "@types/aws-lambda": "^8.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
