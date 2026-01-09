@@ -286,6 +286,23 @@ export async function dispatchEvent(
     const routePattern = event.resource || event.path;
     const actualPath = event.path || event.resource;
     
+    // Handle CORS preflight requests automatically
+    if (method === 'options') {
+      if (debug) {
+        console.log('[SEO] Handling OPTIONS preflight request');
+      }
+      return {
+        statusCode: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-App-Version,X-Platform',
+          'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+          'Access-Control-Max-Age': '86400',
+        },
+        body: '',
+      };
+    }
+    
     if (debug) {
       console.log('[SEO] Method:', method, 'Path:', routePattern, 'Actual:', actualPath);
     }
