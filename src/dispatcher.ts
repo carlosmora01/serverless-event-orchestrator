@@ -139,15 +139,18 @@ function findRouteInSegmentsWithActualPath(
 /**
  * Normalizes an API Gateway event into a standard format
  */
-function normalizeApiGatewayEvent(event: any, segment: RouteSegment, params: Record<string, string>): NormalizedEvent {
+function normalizeApiGatewayEvent(event: any, segment: RouteSegment, extractedParams: Record<string, string>): NormalizedEvent {
   const identity = extractIdentity(event);
+  
+  // Merge: pathParameters from original event + extracted params (extractedParams takes priority)
+  const params = { ...event.pathParameters, ...extractedParams };
   
   return {
     eventRaw: event,
     eventType: EventType.ApiGateway,
     payload: {
       body: parseJsonBody(event.body, event.isBase64Encoded),
-      pathParameters: { ...event.pathParameters, ...params },
+      pathParameters: params,
       queryStringParameters: parseQueryParams(event.queryStringParameters),
       headers: normalizeHeaders(event.headers),
     },

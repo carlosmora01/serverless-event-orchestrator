@@ -318,6 +318,181 @@ describe('dispatchEvent - Lambda', () => {
   });
 });
 
+describe('dispatchEvent - Path Parameters Fallback', () => {
+  const mockHandler = jest.fn().mockResolvedValue({ statusCode: 200, body: '{}' });
+
+  beforeEach(() => {
+    mockHandler.mockClear();
+  });
+
+  it('should include event.pathParameters in params when route matching extracts params', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        get: {
+          '/users/{id}': { handler: mockHandler }
+        }
+      }
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/users/{id}',
+      path: '/users/456',
+      pathParameters: { id: '456' },
+      headers: {},
+      body: null
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(mockHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { id: '456' },
+        payload: expect.objectContaining({
+          pathParameters: { id: '456' }
+        })
+      })
+    );
+  });
+
+  it('should use event.pathParameters as fallback when route matching fails to extract params', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        public: {
+          get: {
+            '/property-types/{id}': { handler: mockHandler }
+          }
+        }
+      } as SegmentedHttpRouter
+    };
+
+    // Simulate API Gateway sending full path with basePath, but router uses relative path
+    // In this case, route matches by pattern but actualPath differs
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/property-types/{id}',
+      path: '/property-types/abc123',
+      pathParameters: { id: 'abc123' }, // API Gateway already extracted this
+      headers: {},
+      body: null
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(mockHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: expect.objectContaining({ id: 'abc123' }),
+        payload: expect.objectContaining({
+          pathParameters: expect.objectContaining({ id: 'abc123' })
+        })
+      })
+    );
+  });
+
+  it('should give priority to extracted params over event.pathParameters', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        get: {
+          '/items/{itemId}': { handler: mockHandler }
+        }
+      }
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/items/{itemId}',
+      path: '/items/extracted-value',
+      pathParameters: { itemId: 'original-value', extra: 'should-persist' },
+      headers: {},
+      body: null
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(mockHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { 
+          itemId: 'extracted-value', // Extracted takes priority
+          extra: 'should-persist'    // Original persists
+        },
+        payload: expect.objectContaining({
+          pathParameters: { 
+            itemId: 'extracted-value',
+            extra: 'should-persist'
+          }
+        })
+      })
+    );
+  });
+
+  it('should work with basePath mismatch between router and API Gateway', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        private: {
+          get: {
+            '/categories/{categoryId}/items/{itemId}': { handler: mockHandler }
+          }
+        }
+      } as SegmentedHttpRouter
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/categories/{categoryId}/items/{itemId}',
+      path: '/categories/cat-1/items/item-2',
+      pathParameters: { categoryId: 'cat-1', itemId: 'item-2' },
+      headers: {},
+      body: null
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(mockHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { categoryId: 'cat-1', itemId: 'item-2' },
+        payload: expect.objectContaining({
+          pathParameters: { categoryId: 'cat-1', itemId: 'item-2' }
+        })
+      })
+    );
+  });
+
+  it('should handle null pathParameters from event gracefully', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        get: {
+          '/static-route': { handler: mockHandler }
+        }
+      }
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/static-route',
+      path: '/static-route',
+      pathParameters: null, // API Gateway sends null for routes without params
+      headers: {},
+      body: null
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(mockHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: {},
+        payload: expect.objectContaining({
+          pathParameters: {}
+        })
+      })
+    );
+  });
+});
+
 describe('dispatchEvent - User Pool Validation', () => {
   const mockHandler = jest.fn().mockResolvedValue({ statusCode: 200 });
 
