@@ -85,14 +85,19 @@ export function createStandardResponse<T, C = string>(
     ...(message && { message }),
   };
 
+  const corsOrigin = process.env.CORS_ALLOWED_ORIGINS || '*';
+  const corsHeaders = process.env.CORS_ALLOWED_HEADERS || 
+    'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,appVersion,app-version,platform,geo,x-forwarded-for,x-real-ip';
+  const corsMethods = process.env.CORS_ALLOWED_METHODS || 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
+
   return {
     statusCode,
     body: JSON.stringify(body, null, 2),
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-App-Version,X-Platform',
-      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+      'Access-Control-Allow-Origin': corsOrigin,
+      'Access-Control-Allow-Headers': corsHeaders,
+      'Access-Control-Allow-Methods': corsMethods,
       ...headers,
     },
   };

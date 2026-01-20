@@ -264,6 +264,31 @@ async function executeMiddleware(
 }
 
 /**
+ * Applies CORS headers to any API Gateway response
+ * This ensures CORS works regardless of how the handler builds its response
+ */
+function applyCorsToResponse(response: any): any {
+  if (!response || typeof response !== 'object') return response;
+  
+  const corsOrigin = process.env.CORS_ALLOWED_ORIGINS || '*';
+  const corsHeaders = process.env.CORS_ALLOWED_HEADERS || 
+    'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,appVersion,app-version,platform,geo,x-forwarded-for,x-real-ip';
+  const corsMethods = process.env.CORS_ALLOWED_METHODS || 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
+  
+  const existingHeaders = response.headers || {};
+  
+  return {
+    ...response,
+    headers: {
+      'Access-Control-Allow-Origin': corsOrigin,
+      'Access-Control-Allow-Headers': corsHeaders,
+      'Access-Control-Allow-Methods': corsMethods,
+      ...existingHeaders,
+    },
+  };
+}
+
+/**
  * Main dispatch function with all improvements
  */
 export async function dispatchEvent(
@@ -294,13 +319,19 @@ export async function dispatchEvent(
       if (debug) {
         console.log('[SEO] Handling OPTIONS preflight request');
       }
+      const corsOrigin = process.env.CORS_ALLOWED_ORIGINS || '*';
+      const corsHeaders = process.env.CORS_ALLOWED_HEADERS || 
+        'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,appVersion,app-version,platform,geo,x-forwarded-for,x-real-ip';
+      const corsMethods = process.env.CORS_ALLOWED_METHODS || 'GET,POST,PUT,PATCH,DELETE,OPTIONS';
+      const corsMaxAge = process.env.CORS_MAX_AGE || '600';
+      
       return {
         statusCode: 204,
         headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-App-Version,X-Platform',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-          'Access-Control-Max-Age': '86400',
+          'Access-Control-Allow-Origin': corsOrigin,
+          'Access-Control-Allow-Headers': corsHeaders,
+          'Access-Control-Allow-Methods': corsMethods,
+          'Access-Control-Max-Age': corsMaxAge,
         },
         body: '',
       };
@@ -312,7 +343,7 @@ export async function dispatchEvent(
     
     const apiRoutes = routes.apigateway;
     if (!apiRoutes) {
-      return config.responses?.notFound?.() ?? notFoundResponse('No API routes configured');
+      return applyCorsToResponse(config.responses?.notFound?.() ?? notFoundResponse('No API routes configured'));
     }
     
     let routeMatch: RouteMatch | null = null;
@@ -338,7 +369,7 @@ export async function dispatchEvent(
       if (debug) {
         console.log('[SEO] No route found for:', method, routePattern);
       }
-      return config.responses?.notFound?.() ?? notFoundResponse(`Route not found: ${method.toUpperCase()} ${routePattern}`);
+      return applyCorsToResponse(config.responses?.notFound?.() ?? notFoundResponse(`Route not found: ${method.toUpperCase()} ${routePattern}`));
     }
     
     if (debug) {
@@ -353,7 +384,7 @@ export async function dispatchEvent(
       if (debug) {
         console.log('[SEO] User Pool validation failed for segment:', routeMatch.segment);
       }
-      return config.responses?.forbidden?.() ?? forbiddenResponse('Access denied: Invalid token issuer');
+      return applyCorsToResponse(config.responses?.forbidden?.() ?? forbiddenResponse('Access denied: Invalid token issuer'));
     }
     
     // Execute global middleware
@@ -366,8 +397,9 @@ export async function dispatchEvent(
       normalized = await executeMiddleware(routeMatch.middleware, normalized);
     }
     
-    // Execute handler
-    return routeMatch.handler(normalized);
+    // Execute handler and apply CORS headers to response
+    const handlerResponse = await routeMatch.handler(normalized);
+    return applyCorsToResponse(handlerResponse);
   }
   
   // Handle EventBridge events
