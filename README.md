@@ -10,7 +10,7 @@ A lightweight, type-safe event dispatcher and middleware orchestrator for AWS La
 - **Multi-Trigger Support**: Handle HTTP (API Gateway), SQS, EventBridge, and Lambda invocations with a single handler
 - **Segmented Routing**: Organize routes by security context (`public`, `private`, `backoffice`, `internal`)
 - **Path Parameters**: Built-in support for dynamic routes like `/users/{id}`
-- **Identity Aware**: Automatic Cognito User Pool validation per segment
+- **Identity Aware**: Automatic Cognito User Pool validation per segment and optional JWT extraction from headers
 - **Middleware Support**: Global and per-segment middleware chains
 - **Zero Config CORS**: Built-in CORS handling with sensible defaults
 - **Response Utilities**: Standardized response helpers (success, error, etc.)
@@ -295,6 +295,10 @@ import { dispatchEvent, OrchestratorConfig } from 'serverless-event-orchestrator
 const config: OrchestratorConfig = {
   // Enable debug logging
   debug: process.env.NODE_ENV !== 'production',
+  
+  // Automatically extract identity from Authorization header if no authorizer is present
+  // Useful when you don't use Cognito Authorizers in API Gateway
+  autoExtractIdentity: true,
   
   // User Pool validation per segment
   userPools: {

@@ -179,4 +179,9 @@ export interface OrchestratorConfig {
     badRequest?: (message?: string) => any;
     internalError?: (message?: string) => any;
   };
+
+  /**
+   * Automatically extract identity from Authorization header if no authorizer is present
+   */
+  autoExtractIdentity?: boolean;
 }

@@ -167,6 +167,43 @@ describe('extractIdentity', () => {
 
     expect(extractIdentity(event)).toBeUndefined();
   });
+
+  it('should extract identity from Authorization header when autoExtract is true', () => {
+    // Mock JWT payload: { sub: 'user-header', email: 'header@example.com', 'cognito:groups': 'Admin', iss: 'https://cognito-idp.com' }
+    const payload = {
+      sub: 'user-header',
+      email: 'header@example.com',
+      'cognito:groups': 'Admin',
+      iss: 'https://cognito-idp.com'
+    };
+    const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64').replace(/=/g, '');
+    const mockToken = `header.${encodedPayload}.signature`;
+    
+    const event = {
+      headers: {
+        Authorization: `Bearer ${mockToken}`
+      }
+    };
+
+    const identity = extractIdentity(event, true);
+
+    expect(identity).toEqual({
+      userId: 'user-header',
+      email: 'header@example.com',
+      groups: ['Admin'],
+      issuer: 'https://cognito-idp.com',
+      claims: payload
+    });
+  });
+
+  it('should not extract from Authorization header when autoExtract is false', () => {
+    const event = {
+      headers: {
+        Authorization: 'Bearer some.token.here'
+      }
+    };
+    expect(extractIdentity(event, false)).toBeUndefined();
+  });
 });
 
 describe('extractUserPoolId', () => {

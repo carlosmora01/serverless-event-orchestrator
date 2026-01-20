@@ -51,13 +51,22 @@ function hasIdentityProperties(obj: any): boolean {
 }
 
 /**
- * Extracts identity information from the event's authorizer context
+ * Extracts identity information from the event's authorizer context or Authorization header
  * @param event - Raw API Gateway event
+ * @param autoExtract - Whether to automatically extract from Authorization header if authorizer is missing
  * @returns Identity context or undefined if not authenticated
  */
-export function extractIdentity(event: any): IdentityContext | undefined {
+export function extractIdentity(event: any, autoExtract: boolean = false): IdentityContext | undefined {
   const authorizer = event?.requestContext?.authorizer;
-  const claims = extractClaims(authorizer);
+  let claims = extractClaims(authorizer);
+  
+  // If no authorizer claims found and autoExtract is enabled, try decoding the Authorization header
+  if (!claims && autoExtract) {
+    const authHeader = event?.headers?.authorization || event?.headers?.Authorization;
+    if (authHeader) {
+      claims = decodeJwtFromHeader(authHeader);
+    }
+  }
   
   if (!claims) {
     return undefined;
@@ -70,6 +79,27 @@ export function extractIdentity(event: any): IdentityContext | undefined {
     issuer: claims.iss,
     claims,
   };
+}
+
+/**
+ * Decodes a JWT from the Authorization header without validating signature
+ * @param authHeader - The Authorization header value (e.g., "Bearer eyJ...")
+ */
+function decodeJwtFromHeader(authHeader: string): Record<string, any> | undefined {
+  try {
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+    const parts = token.split('.');
+    if (parts.length !== 3) return undefined;
+
+    const payload = parts[1];
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
+    
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    console.error('[SEO] Error decoding JWT from header:', error);
+    return undefined;
+  }
 }
 
 /**
