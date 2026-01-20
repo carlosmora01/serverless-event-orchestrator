@@ -73,6 +73,100 @@ describe('extractIdentity', () => {
     const identity = extractIdentity(event);
     expect(identity?.groups).toEqual(['Admin', 'User']);
   });
+
+  // HTTP API with JWT Authorizer tests
+  it('should extract identity from HTTP API JWT Authorizer format', () => {
+    const event = {
+      requestContext: {
+        authorizer: {
+          jwt: {
+            claims: {
+              sub: 'user-456',
+              email: 'jwt@example.com',
+              iss: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_JWT123'
+            }
+          }
+        }
+      }
+    };
+
+    const identity = extractIdentity(event);
+
+    expect(identity).toEqual({
+      userId: 'user-456',
+      email: 'jwt@example.com',
+      groups: [],
+      issuer: 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_JWT123',
+      claims: event.requestContext.authorizer.jwt.claims
+    });
+  });
+
+  // HTTP API with Lambda Authorizer tests
+  it('should extract identity from HTTP API Lambda Authorizer format', () => {
+    const event = {
+      requestContext: {
+        authorizer: {
+          lambda: {
+            userId: 'lambda-user-789',
+            email: 'lambda@example.com',
+            groups: ['Premium', 'Verified']
+          }
+        }
+      }
+    };
+
+    const identity = extractIdentity(event);
+
+    expect(identity?.userId).toBe('lambda-user-789');
+    expect(identity?.email).toBe('lambda@example.com');
+    expect(identity?.groups).toEqual(['Premium', 'Verified']);
+  });
+
+  // REST API with Custom Lambda Authorizer (flat structure)
+  it('should extract identity from custom Lambda Authorizer with flat structure', () => {
+    const event = {
+      requestContext: {
+        authorizer: {
+          sub: 'custom-user-101',
+          email: 'custom@example.com',
+          iss: 'https://custom-issuer.com'
+        }
+      }
+    };
+
+    const identity = extractIdentity(event);
+
+    expect(identity?.userId).toBe('custom-user-101');
+    expect(identity?.email).toBe('custom@example.com');
+    expect(identity?.issuer).toBe('https://custom-issuer.com');
+  });
+
+  it('should handle userId fallback from user_id in custom authorizer', () => {
+    const event = {
+      requestContext: {
+        authorizer: {
+          user_id: 'underscore-user',
+          email: 'test@example.com'
+        }
+      }
+    };
+
+    const identity = extractIdentity(event);
+    expect(identity?.userId).toBe('underscore-user');
+  });
+
+  it('should return undefined when authorizer has no identity properties', () => {
+    const event = {
+      requestContext: {
+        authorizer: {
+          principalId: 'some-principal',
+          integrationLatency: 123
+        }
+      }
+    };
+
+    expect(extractIdentity(event)).toBeUndefined();
+  });
 });
 
 describe('extractUserPoolId', () => {

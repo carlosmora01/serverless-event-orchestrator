@@ -2,8 +2,53 @@ import { IdentityContext } from '../types/routes.js';
 
 /**
  * Extracts identity context from API Gateway authorizer claims
- * Supports Cognito User Pools and custom authorizers
+ * Supports multiple API Gateway formats:
+ * - REST API with Cognito User Pool Authorizer
+ * - HTTP API with JWT Authorizer
+ * - REST API with Custom Lambda Authorizer
+ * - HTTP API with Lambda Authorizer
  */
+
+/**
+ * Extracts claims from the authorizer context, handling multiple API Gateway formats
+ * @param authorizer - The authorizer object from requestContext
+ * @returns Claims object or undefined
+ */
+function extractClaims(authorizer: any): Record<string, any> | undefined {
+  if (!authorizer) return undefined;
+
+  // 1. REST API with Cognito User Pool Authorizer: authorizer.claims
+  if (authorizer.claims && typeof authorizer.claims === 'object') {
+    return authorizer.claims;
+  }
+
+  // 2. HTTP API with JWT Authorizer: authorizer.jwt.claims
+  if (authorizer.jwt?.claims && typeof authorizer.jwt.claims === 'object') {
+    return authorizer.jwt.claims;
+  }
+
+  // 3. HTTP API with Lambda Authorizer: authorizer.lambda
+  if (authorizer.lambda && typeof authorizer.lambda === 'object') {
+    return authorizer.lambda;
+  }
+
+  // 4. REST API with Custom Lambda Authorizer: claims directly in authorizer
+  // Check if authorizer has identity-like properties (sub, userId, email, etc.)
+  if (hasIdentityProperties(authorizer)) {
+    return authorizer;
+  }
+
+  return undefined;
+}
+
+/**
+ * Checks if an object has identity-like properties
+ */
+function hasIdentityProperties(obj: any): boolean {
+  if (!obj || typeof obj !== 'object') return false;
+  const identityKeys = ['sub', 'userId', 'user_id', 'email', 'cognito:username', 'iss', 'aud'];
+  return identityKeys.some(key => key in obj);
+}
 
 /**
  * Extracts identity information from the event's authorizer context
@@ -11,16 +56,17 @@ import { IdentityContext } from '../types/routes.js';
  * @returns Identity context or undefined if not authenticated
  */
 export function extractIdentity(event: any): IdentityContext | undefined {
-  const claims = event?.requestContext?.authorizer?.claims;
+  const authorizer = event?.requestContext?.authorizer;
+  const claims = extractClaims(authorizer);
   
   if (!claims) {
     return undefined;
   }
   
   return {
-    userId: claims.sub || claims['cognito:username'],
+    userId: claims.sub || claims['cognito:username'] || claims.userId || claims.user_id,
     email: claims.email,
-    groups: parseGroups(claims['cognito:groups']),
+    groups: parseGroups(claims['cognito:groups'] || claims.groups),
     issuer: claims.iss,
     claims,
   };
