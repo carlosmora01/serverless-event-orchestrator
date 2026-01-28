@@ -598,3 +598,118 @@ describe('dispatchEvent - User Pool Validation', () => {
     expect(mockHandler).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('dispatchEvent - Internal Segment', () => {
+  const mockHandler = jest.fn().mockResolvedValue({ statusCode: 200, body: '{}' });
+
+  beforeEach(() => {
+    mockHandler.mockClear();
+  });
+
+  it('should dispatch to internal segment routes', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        internal: {
+          get: { '/internal/users/{id}': { handler: mockHandler } }
+        }
+      } as SegmentedHttpRouter
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/internal/users/{id}',
+      path: '/internal/users/user-123',
+      pathParameters: { id: 'user-123' },
+      headers: {},
+      body: null
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(mockHandler).toHaveBeenCalledTimes(1);
+    expect(mockHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({
+          segment: RouteSegment.Internal
+        }),
+        params: { id: 'user-123' },
+        payload: expect.objectContaining({
+          pathParameters: { id: 'user-123' }
+        })
+      })
+    );
+  });
+
+  it('should extract path parameters from internal routes with IAM auth (no Cognito)', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        internal: {
+          get: { '/internal/users/{id}': { handler: mockHandler } }
+        }
+      } as SegmentedHttpRouter
+    };
+
+    // Simulate Internal API Gateway event with IAM auth (no authorizer/claims)
+    const event = {
+      requestContext: {
+        requestId: 'iam-request-123',
+        identity: {
+          userArn: 'arn:aws:iam::123456789:user/lambda-role'
+        }
+      },
+      httpMethod: 'GET',
+      resource: '/internal/users/{id}',
+      path: '/internal/users/be018a15-4a51-45b1-b610-d7eb9430b50f',
+      pathParameters: { id: 'be018a15-4a51-45b1-b610-d7eb9430b50f' },
+      headers: {
+        'X-Trace-Id': 'trace-123',
+        'X-Source-Lambda': 'ml-agent-manager-lambda'
+      },
+      body: null
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(mockHandler).toHaveBeenCalledTimes(1);
+    expect(mockHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        params: { id: 'be018a15-4a51-45b1-b610-d7eb9430b50f' },
+        payload: expect.objectContaining({
+          pathParameters: { id: 'be018a15-4a51-45b1-b610-d7eb9430b50f' }
+        }),
+        context: expect.objectContaining({
+          segment: RouteSegment.Internal
+        })
+      })
+    );
+  });
+
+  it('should not require User Pool validation for internal segment', async () => {
+    const routes: DispatchRoutes = {
+      apigateway: {
+        internal: {
+          get: { '/internal/data': { handler: mockHandler } }
+        }
+      } as SegmentedHttpRouter
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/internal/data',
+      path: '/internal/data',
+      headers: {},
+      body: null
+    };
+
+    // Even with userPools configured, internal routes should not require Cognito validation
+    await dispatchEvent(event, routes, {
+      userPools: {
+        private: 'us-east-1_ABC123'
+      }
+    });
+
+    expect(mockHandler).toHaveBeenCalledTimes(1);
+  });
+});

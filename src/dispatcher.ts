@@ -146,10 +146,15 @@ function normalizeApiGatewayEvent(
   autoExtract: boolean = false
 ): NormalizedEvent {
   const identity = extractIdentity(event, autoExtract);
-  
+
+  // Safely extract pathParameters from event (handle null/undefined)
+  const eventPathParams: Record<string, string> = event.pathParameters && typeof event.pathParameters === 'object'
+    ? { ...event.pathParameters }
+    : {};
+
   // Merge: pathParameters from original event + extracted params (extractedParams takes priority)
-  const params = { ...event.pathParameters, ...extractedParams };
-  
+  const params = { ...eventPathParams, ...extractedParams };
+
   return {
     eventRaw: event,
     eventType: EventType.ApiGateway,
@@ -383,8 +388,8 @@ export async function dispatchEvent(
     
     // Normalize event
     let normalized = normalizeApiGatewayEvent(
-      event, 
-      routeMatch.segment, 
+      event,
+      routeMatch.segment,
       routeMatch.params,
       config.autoExtractIdentity
     );
