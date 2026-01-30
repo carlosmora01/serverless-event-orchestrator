@@ -10,18 +10,22 @@
  */
 export function patternToRegex(pattern: string): { regex: RegExp; paramNames: string[] } {
   const paramNames: string[] = [];
-  
+
+  // First, handle :paramName format (Express style) BEFORE escaping
+  // This converts :id to {id} for uniform processing
+  let normalizedPattern = pattern.replace(/:(\w+)/g, '{$1}');
+
   // Escape special regex characters except for our parameter syntax
-  let regexPattern = pattern
+  let regexPattern = normalizedPattern
     .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\\\{(\w+)\\\}/g, (_, paramName) => {
       paramNames.push(paramName);
       return '([^/]+)';
     });
-  
+
   // Ensure exact match
   regexPattern = `^${regexPattern}$`;
-  
+
   return {
     regex: new RegExp(regexPattern),
     paramNames,
@@ -56,7 +60,8 @@ export function matchPath(pattern: string, path: string): Record<string, string>
  * @returns True if pattern has parameters
  */
 export function hasPathParameters(pattern: string): boolean {
-  return /\{[\w]+\}/.test(pattern);
+  // Support both {id} and :id formats
+  return /\{[\w]+\}/.test(pattern) || /:[\w]+/.test(pattern);
 }
 
 /**
