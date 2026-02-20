@@ -255,7 +255,22 @@ function validateSegmentUserPool(
 }
 
 /**
- * Executes middleware chain
+ * Checks if a thrown value is an HTTP response (used by middleware to halt execution)
+ */
+function isHttpResponse(value: unknown): value is { statusCode: number; body: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'statusCode' in value &&
+    typeof (value as any).statusCode === 'number'
+  );
+}
+
+/**
+ * Executes middleware chain.
+ * If a middleware throws an HttpResponse-like object (has statusCode),
+ * it is treated as an early return (e.g., 403 Forbidden from tenantGuard).
+ * If it throws a regular Error, it is re-thrown.
  */
 async function executeMiddleware(
   middleware: MiddlewareFn[],
@@ -402,14 +417,24 @@ export async function dispatchEvent(
       return applyCorsToResponse(config.responses?.forbidden?.() ?? forbiddenResponse('Access denied: Invalid token issuer'));
     }
     
-    // Execute global middleware
-    if (config.globalMiddleware?.length) {
-      normalized = await executeMiddleware(config.globalMiddleware, normalized);
-    }
-    
-    // Execute segment middleware
-    if (routeMatch.middleware?.length) {
-      normalized = await executeMiddleware(routeMatch.middleware, normalized);
+    // Execute middlewares with error handling for HttpResponse throws
+    try {
+      // Execute global middleware
+      if (config.globalMiddleware?.length) {
+        normalized = await executeMiddleware(config.globalMiddleware, normalized);
+      }
+      
+      // Execute segment middleware
+      if (routeMatch.middleware?.length) {
+        normalized = await executeMiddleware(routeMatch.middleware, normalized);
+      }
+    } catch (thrown) {
+      // If middleware threw an HttpResponse (e.g., forbiddenResponse from tenantGuard), return it
+      if (isHttpResponse(thrown)) {
+        return applyCorsToResponse(thrown);
+      }
+      // Otherwise, re-throw as unhandled error
+      throw thrown;
     }
     
     // Execute handler and apply CORS headers to response

@@ -1,4 +1,5 @@
 import { RouteSegment } from './event-type.enum.js';
+import type { TenantInfo } from '../tenant/types.js';
 
 /**
  * HTTP methods supported by the router
@@ -146,6 +147,7 @@ export interface NormalizedEvent {
     segment: RouteSegment;
     identity?: IdentityContext;
     requestId?: string;
+    tenantInfo?: TenantInfo;
   };
 }
 

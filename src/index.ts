@@ -90,3 +90,33 @@ export {
   getHeader,
   getCorsHeaders,
 } from './utils/headers.js';
+
+// Tenant context
+export { TenantContext } from './tenant/TenantContext.js';
+
+export type {
+  TenantInfo,
+  TenantType,
+  Plan,
+  TenantFeatures,
+  TenantClaims,
+} from './tenant/types.js';
+
+export {
+  isTenantType,
+  isPlan,
+  TENANT_HEADERS,
+} from './tenant/types.js';
+
+export {
+  tenantInfoFromClaims,
+  tenantInfoFromHeaders,
+  tenantInfoToHeaders,
+} from './tenant/helpers.js';
+
+// Tenant middleware
+export {
+  initTenantContext,
+  tenantGuard,
+  crmGuard,
+} from './middleware/index.js';
