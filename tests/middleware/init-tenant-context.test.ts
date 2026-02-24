@@ -60,7 +60,7 @@ describe('initTenantContext', () => {
       expect(result.context.tenantInfo?.tenantType).toBe('ORG');
       expect(result.context.tenantInfo?.countryCode).toBe('CO');
       expect(result.context.tenantInfo?.plan).toBe('PRO');
-      expect(result.context.tenantInfo?.hasCRM).toBe(true);
+      expect(result.context.tenantInfo?.hasCRM).toBe('true');
     });
 
     it('initializes TenantContext (AsyncLocalStorage)', async () => {

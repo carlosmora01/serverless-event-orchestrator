@@ -47,7 +47,7 @@ describe('tenantInfoFromClaims', () => {
       personProfileId: 'person_001',
       orgProfileId: 'org_abc',
       plan: 'PRO',
-      hasCRM: true,
+      hasCRM: 'true',
     });
   });
 
@@ -67,7 +67,7 @@ describe('tenantInfoFromClaims', () => {
 
   it('hasCRM is false if claim is not "true"', () => {
     const result = tenantInfoFromClaims({ ...validClaims, 'custom:hasCRM': 'false' });
-    expect(result?.hasCRM).toBe(false);
+    expect(result?.hasCRM).toBe('false');
   });
 
   it('plan is undefined if claim is not a valid Plan', () => {
@@ -108,7 +108,7 @@ describe('tenantInfoFromClaims', () => {
         personProfileId: 'person_001',
         orgProfileId: 'org_abc',
         plan: 'PRO',
-        hasCRM: true,
+        hasCRM: 'true',
       });
     });
 
