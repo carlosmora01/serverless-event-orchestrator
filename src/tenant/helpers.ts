@@ -2,17 +2,34 @@ import type { TenantInfo } from './types.js';
 import { isTenantType, isPlan, TENANT_HEADERS } from './types.js';
 
 /**
+ * Resolves a claim value by checking both `custom:{key}` and `{key}` formats.
+ * Cognito Pre Token Generation V2 adds claims WITHOUT the `custom:` prefix,
+ * while Cognito user pool custom attributes use the `custom:` prefix.
+ * This helper supports both conventions transparently.
+ */
+function getClaim(claims: Record<string, any>, key: string): any {
+  return claims[`custom:${key}`] ?? claims[key];
+}
+
+/**
  * Builds a TenantInfo from TenantClaims in the JWT.
  * Used by initTenantContext middleware in serverless-event-orchestrator.
+ *
+ * Supports claims with or without the `custom:` prefix:
+ * - `custom:tenantId` (Cognito user pool custom attributes)
+ * - `tenantId` (Cognito Pre Token Generation V2 added claims)
  *
  * @param claims - Partial claims object from JWT (event.context.identity.claims)
  * @returns TenantInfo if all required fields are present, undefined otherwise
  */
 export function tenantInfoFromClaims(claims: Record<string, any>): TenantInfo | undefined {
-  const tenantId = claims['custom:tenantId'];
-  const tenantType = claims['custom:tenantType'];
-  const userId = claims['custom:userId'] || claims['sub'];
-  const countryCode = claims['custom:countryCode'];
+  const tenantId = getClaim(claims, 'tenantId');
+  const tenantType = getClaim(claims, 'tenantType');
+  const userId = getClaim(claims, 'userId') || claims['sub'];
+  const countryCode = getClaim(claims, 'countryCode');
+  const personProfileId = getClaim(claims, 'personProfileId');
+  const orgProfileId = getClaim(claims, 'orgProfileId');
+  const hasCRM = getClaim(claims, 'hasCRM');
 
   if (!tenantId || !tenantType || !userId || !countryCode) {
     return undefined;
@@ -26,11 +43,11 @@ export function tenantInfoFromClaims(claims: Record<string, any>): TenantInfo | 
     tenantId,
     tenantType,
     userId,
-    personProfileId: claims['custom:personProfileId'],
-    orgProfileId: claims['custom:orgProfileId'],
+    personProfileId,
+    orgProfileId,
     countryCode,
-    plan: isPlan(claims['custom:plan']) ? claims['custom:plan'] : undefined,
-    hasCRM: claims['custom:hasCRM'] === 'true',
+    plan: isPlan(getClaim(claims, 'plan')) ? getClaim(claims, 'plan') : undefined,
+    hasCRM,
   };
 }
 

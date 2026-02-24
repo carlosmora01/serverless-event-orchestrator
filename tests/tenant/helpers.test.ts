@@ -85,6 +85,71 @@ describe('tenantInfoFromClaims', () => {
     const result = tenantInfoFromClaims(claims);
     expect(result?.userId).toBe('cognito-sub-123');
   });
+
+  describe('without custom: prefix (Cognito Pre Token Generation V2)', () => {
+    const v2Claims = {
+      tenantId: 'org_abc',
+      tenantType: 'ORG',
+      userId: 'user_001',
+      countryCode: 'CO',
+      personProfileId: 'person_001',
+      orgProfileId: 'org_abc',
+      plan: 'PRO',
+      hasCRM: 'true',
+    };
+
+    it('builds complete TenantInfo from claims without custom: prefix', () => {
+      const result = tenantInfoFromClaims(v2Claims);
+      expect(result).toEqual({
+        tenantId: 'org_abc',
+        tenantType: 'ORG',
+        userId: 'user_001',
+        countryCode: 'CO',
+        personProfileId: 'person_001',
+        orgProfileId: 'org_abc',
+        plan: 'PRO',
+        hasCRM: true,
+      });
+    });
+
+    it('returns undefined if tenantId is missing (no prefix)', () => {
+      const { tenantId: _, ...claims } = v2Claims;
+      expect(tenantInfoFromClaims(claims)).toBeUndefined();
+    });
+
+    it('returns undefined if tenantType is invalid (no prefix)', () => {
+      expect(tenantInfoFromClaims({ ...v2Claims, tenantType: 'INVALID' })).toBeUndefined();
+    });
+
+    it('prefers custom: prefix over unprefixed when both exist', () => {
+      const mixedClaims = {
+        'custom:tenantId': 'from_custom',
+        tenantId: 'from_plain',
+        'custom:tenantType': 'ORG',
+        tenantType: 'PERSON',
+        'custom:userId': 'user_custom',
+        userId: 'user_plain',
+        'custom:countryCode': 'CO',
+        countryCode: 'US',
+      };
+      const result = tenantInfoFromClaims(mixedClaims);
+      expect(result?.tenantId).toBe('from_custom');
+      expect(result?.tenantType).toBe('ORG');
+      expect(result?.userId).toBe('user_custom');
+      expect(result?.countryCode).toBe('CO');
+    });
+
+    it('uses sub as fallback for userId without prefix', () => {
+      const claims = {
+        tenantId: 'org_abc',
+        tenantType: 'ORG',
+        sub: 'cognito-sub-123',
+        countryCode: 'CO',
+      };
+      const result = tenantInfoFromClaims(claims);
+      expect(result?.userId).toBe('cognito-sub-123');
+    });
+  });
 });
 
 describe('tenantInfoFromHeaders / tenantInfoToHeaders', () => {
