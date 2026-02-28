@@ -73,7 +73,7 @@ export function extractIdentity(event: any, autoExtract: boolean = false): Ident
   }
   
   return {
-    userId: claims.sub || claims['cognito:username'] || claims.userId || claims.user_id,
+    userId: claims.userId || claims.user_id || claims['cognito:username'] || claims.sub,
     email: claims.email,
     groups: parseGroups(claims['cognito:groups'] || claims.groups),
     issuer: claims.iss,
