@@ -106,7 +106,7 @@ export async function extractIdentity(event: any, optionsOrAutoExtract?: boolean
  */
 function buildIdentity(claims: Record<string, any>): IdentityContext {
   return {
-    userId: claims.sub || claims['cognito:username'] || claims.userId || claims.user_id,
+    userId: claims.userId || claims.user_id || claims['cognito:username'] || claims.sub,
     email: claims.email,
     groups: parseGroups(claims['cognito:groups'] || claims.groups),
     issuer: claims.iss,
