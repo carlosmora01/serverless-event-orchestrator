@@ -16,7 +16,8 @@ import { matchPath, normalizePath } from './utils/path-matcher.js';
 import { normalizeHeaders } from './utils/headers.js';
 import { parseJsonBody, parseQueryParams } from './http/body-parser.js';
 import { extractIdentity, validateIssuer } from './identity/extractor.js';
-import { forbiddenResponse, badRequestResponse, notFoundResponse } from './http/response.js';
+import type { JwtVerificationPoolConfig } from './types/routes.js';
+import { forbiddenResponse, badRequestResponse, notFoundResponse, unauthorizedResponse } from './http/response.js';
 
 /**
  * Detects the type of AWS event
@@ -139,13 +140,14 @@ function findRouteInSegmentsWithActualPath(
 /**
  * Normalizes an API Gateway event into a standard format
  */
-function normalizeApiGatewayEvent(
+async function normalizeApiGatewayEvent(
   event: any,
   segment: RouteSegment,
   extractedParams: Record<string, string>,
-  autoExtract: boolean = false
-): NormalizedEvent {
-  const identity = extractIdentity(event, autoExtract);
+  autoExtract: boolean = false,
+  jwtVerificationConfig?: JwtVerificationPoolConfig
+): Promise<NormalizedEvent> {
+  const identity = await extractIdentity(event, { autoExtract, jwtVerificationConfig });
 
   // Safely extract pathParameters from event (handle null/undefined)
   const eventPathParams: Record<string, string> = event.pathParameters && typeof event.pathParameters === 'object'
@@ -401,15 +403,25 @@ export async function dispatchEvent(
       console.log('[SEO] Route matched:', routeMatch.segment, 'Params:', routeMatch.params);
     }
     
-    // Normalize event
-    let normalized = normalizeApiGatewayEvent(
+    // Normalize event (with JWT verification if configured for this segment)
+    const jwtVerificationConfig = config.jwtVerification?.[routeMatch.segment];
+    let normalized = await normalizeApiGatewayEvent(
       event,
       routeMatch.segment,
       routeMatch.params,
-      config.autoExtractIdentity
+      config.autoExtractIdentity,
+      jwtVerificationConfig
     );
-    
-    // Validate User Pool
+
+    // If JWT verification is configured but identity is missing, return 401
+    if (jwtVerificationConfig && !normalized.context.identity) {
+      if (debug) {
+        console.log('[SEO] JWT verification failed — no valid identity for segment:', routeMatch.segment);
+      }
+      return applyCorsToResponse(unauthorizedResponse('Invalid or missing authentication token'));
+    }
+
+    // Validate User Pool (legacy issuer-only check)
     if (!validateSegmentUserPool(normalized, routeMatch.segment, config)) {
       if (debug) {
         console.log('[SEO] User Pool validation failed for segment:', routeMatch.segment);

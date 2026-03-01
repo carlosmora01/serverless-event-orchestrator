@@ -33,6 +33,7 @@ export {
   RouteMatch,
   NormalizedEvent,
   OrchestratorConfig,
+  JwtVerificationPoolConfig,
 } from './types/routes.js';
 
 // HTTP utilities
@@ -75,6 +76,10 @@ export {
   hasAnyGroup,
   hasAllGroups,
 } from './identity/extractor.js';
+
+export type { ExtractIdentityOptions } from './identity/extractor.js';
+
+export { verifyJwt } from './identity/jwt-verifier.js';
 
 // Path utilities
 export {

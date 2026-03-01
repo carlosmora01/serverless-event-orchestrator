@@ -1,4 +1,13 @@
-import { IdentityContext } from '../types/routes.js';
+import { IdentityContext, JwtVerificationPoolConfig } from '../types/routes.js';
+import { verifyJwt } from './jwt-verifier.js';
+
+/**
+ * Options for extractIdentity when using JWT verification
+ */
+export interface ExtractIdentityOptions {
+  autoExtract?: boolean;
+  jwtVerificationConfig?: JwtVerificationPoolConfig;
+}
 
 /**
  * Extracts identity context from API Gateway authorizer claims
@@ -51,27 +60,51 @@ function hasIdentityProperties(obj: any): boolean {
 }
 
 /**
- * Extracts identity information from the event's authorizer context or Authorization header
+ * Extracts identity information from the event's authorizer context or Authorization header.
+ * When jwtVerificationConfig is provided, JWT signatures are cryptographically verified
+ * against the Cognito JWKS endpoint. Without it, identity is only extracted from
+ * API Gateway authorizer claims (already verified by API Gateway).
+ *
  * @param event - Raw API Gateway event
- * @param autoExtract - Whether to automatically extract from Authorization header if authorizer is missing
+ * @param optionsOrAutoExtract - Boolean for backwards compatibility, or ExtractIdentityOptions
  * @returns Identity context or undefined if not authenticated
  */
-export function extractIdentity(event: any, autoExtract: boolean = false): IdentityContext | undefined {
+export async function extractIdentity(event: any, optionsOrAutoExtract?: boolean | ExtractIdentityOptions): Promise<IdentityContext | undefined> {
+  const options: ExtractIdentityOptions = typeof optionsOrAutoExtract === 'boolean'
+    ? { autoExtract: optionsOrAutoExtract }
+    : optionsOrAutoExtract ?? {};
+
+  const { autoExtract = false, jwtVerificationConfig } = options;
+
   const authorizer = event?.requestContext?.authorizer;
-  let claims = extractClaims(authorizer);
-  
-  // If no authorizer claims found and autoExtract is enabled, try decoding the Authorization header
-  if (!claims && autoExtract) {
+  const claims = extractClaims(authorizer);
+
+  // If authorizer claims exist, API Gateway already verified the token — use them directly
+  if (claims) {
+    return buildIdentity(claims);
+  }
+
+  // If autoExtract is enabled and jwtVerificationConfig is provided, verify the Authorization header
+  if (autoExtract && jwtVerificationConfig) {
     const authHeader = event?.headers?.authorization || event?.headers?.Authorization;
     if (authHeader) {
-      claims = decodeJwtFromHeader(authHeader);
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+      const verifiedClaims = await verifyJwt(token, jwtVerificationConfig);
+      if (verifiedClaims) {
+        return buildIdentity(verifiedClaims);
+      }
+      // Verification failed → return undefined (caller will return 401)
+      return undefined;
     }
   }
-  
-  if (!claims) {
-    return undefined;
-  }
-  
+
+  return undefined;
+}
+
+/**
+ * Builds an IdentityContext from raw claims
+ */
+function buildIdentity(claims: Record<string, any>): IdentityContext {
   return {
     userId: claims.sub || claims['cognito:username'] || claims.userId || claims.user_id,
     email: claims.email,
@@ -79,27 +112,6 @@ export function extractIdentity(event: any, autoExtract: boolean = false): Ident
     issuer: claims.iss,
     claims,
   };
-}
-
-/**
- * Decodes a JWT from the Authorization header without validating signature
- * @param authHeader - The Authorization header value (e.g., "Bearer eyJ...")
- */
-function decodeJwtFromHeader(authHeader: string): Record<string, any> | undefined {
-  try {
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-    const parts = token.split('.');
-    if (parts.length !== 3) return undefined;
-
-    const payload = parts[1];
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
-    
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    console.error('[SEO] Error decoding JWT from header:', error);
-    return undefined;
-  }
 }
 
 /**

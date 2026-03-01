@@ -8,17 +8,17 @@ import {
 import { IdentityContext } from '../src/types/routes';
 
 describe('extractIdentity', () => {
-  it('should return undefined when no claims present', () => {
+  it('should return undefined when no claims present', async () => {
     const event = { requestContext: {} };
-    expect(extractIdentity(event)).toBeUndefined();
+    expect(await extractIdentity(event)).toBeUndefined();
   });
 
-  it('should return undefined when event has no requestContext', () => {
+  it('should return undefined when event has no requestContext', async () => {
     const event = {};
-    expect(extractIdentity(event)).toBeUndefined();
+    expect(await extractIdentity(event)).toBeUndefined();
   });
 
-  it('should extract identity from Cognito claims', () => {
+  it('should extract identity from Cognito claims', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -32,7 +32,7 @@ describe('extractIdentity', () => {
       }
     };
 
-    const identity = extractIdentity(event);
+    const identity = await extractIdentity(event);
 
     expect(identity).toEqual({
       userId: 'user-123',
@@ -43,7 +43,7 @@ describe('extractIdentity', () => {
     });
   });
 
-  it('should handle cognito:username as userId fallback', () => {
+  it('should handle cognito:username as userId fallback', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -54,11 +54,11 @@ describe('extractIdentity', () => {
       }
     };
 
-    const identity = extractIdentity(event);
+    const identity = await extractIdentity(event);
     expect(identity?.userId).toBe('john_doe');
   });
 
-  it('should handle groups as array', () => {
+  it('should handle groups as array', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -70,12 +70,12 @@ describe('extractIdentity', () => {
       }
     };
 
-    const identity = extractIdentity(event);
+    const identity = await extractIdentity(event);
     expect(identity?.groups).toEqual(['Admin', 'User']);
   });
 
   // HTTP API with JWT Authorizer tests
-  it('should extract identity from HTTP API JWT Authorizer format', () => {
+  it('should extract identity from HTTP API JWT Authorizer format', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -90,7 +90,7 @@ describe('extractIdentity', () => {
       }
     };
 
-    const identity = extractIdentity(event);
+    const identity = await extractIdentity(event);
 
     expect(identity).toEqual({
       userId: 'user-456',
@@ -102,7 +102,7 @@ describe('extractIdentity', () => {
   });
 
   // HTTP API with Lambda Authorizer tests
-  it('should extract identity from HTTP API Lambda Authorizer format', () => {
+  it('should extract identity from HTTP API Lambda Authorizer format', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -115,7 +115,7 @@ describe('extractIdentity', () => {
       }
     };
 
-    const identity = extractIdentity(event);
+    const identity = await extractIdentity(event);
 
     expect(identity?.userId).toBe('lambda-user-789');
     expect(identity?.email).toBe('lambda@example.com');
@@ -123,7 +123,7 @@ describe('extractIdentity', () => {
   });
 
   // REST API with Custom Lambda Authorizer (flat structure)
-  it('should extract identity from custom Lambda Authorizer with flat structure', () => {
+  it('should extract identity from custom Lambda Authorizer with flat structure', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -134,14 +134,14 @@ describe('extractIdentity', () => {
       }
     };
 
-    const identity = extractIdentity(event);
+    const identity = await extractIdentity(event);
 
     expect(identity?.userId).toBe('custom-user-101');
     expect(identity?.email).toBe('custom@example.com');
     expect(identity?.issuer).toBe('https://custom-issuer.com');
   });
 
-  it('should handle userId fallback from user_id in custom authorizer', () => {
+  it('should handle userId fallback from user_id in custom authorizer', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -151,11 +151,11 @@ describe('extractIdentity', () => {
       }
     };
 
-    const identity = extractIdentity(event);
+    const identity = await extractIdentity(event);
     expect(identity?.userId).toBe('underscore-user');
   });
 
-  it('should return undefined when authorizer has no identity properties', () => {
+  it('should return undefined when authorizer has no identity properties', async () => {
     const event = {
       requestContext: {
         authorizer: {
@@ -165,11 +165,10 @@ describe('extractIdentity', () => {
       }
     };
 
-    expect(extractIdentity(event)).toBeUndefined();
+    expect(await extractIdentity(event)).toBeUndefined();
   });
 
-  it('should extract identity from Authorization header when autoExtract is true', () => {
-    // Mock JWT payload: { sub: 'user-header', email: 'header@example.com', 'cognito:groups': 'Admin', iss: 'https://cognito-idp.com' }
+  it('should NOT extract identity from Authorization header with autoExtract but without jwtVerificationConfig', async () => {
     const payload = {
       sub: 'user-header',
       email: 'header@example.com',
@@ -178,31 +177,25 @@ describe('extractIdentity', () => {
     };
     const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64').replace(/=/g, '');
     const mockToken = `header.${encodedPayload}.signature`;
-    
+
     const event = {
       headers: {
         Authorization: `Bearer ${mockToken}`
       }
     };
 
-    const identity = extractIdentity(event, true);
-
-    expect(identity).toEqual({
-      userId: 'user-header',
-      email: 'header@example.com',
-      groups: ['Admin'],
-      issuer: 'https://cognito-idp.com',
-      claims: payload
-    });
+    // Without jwtVerificationConfig, autoExtract alone should NOT decode the token
+    const identity = await extractIdentity(event, true);
+    expect(identity).toBeUndefined();
   });
 
-  it('should not extract from Authorization header when autoExtract is false', () => {
+  it('should not extract from Authorization header when autoExtract is false', async () => {
     const event = {
       headers: {
         Authorization: 'Bearer some.token.here'
       }
     };
-    expect(extractIdentity(event, false)).toBeUndefined();
+    expect(await extractIdentity(event, false)).toBeUndefined();
   });
 });
 

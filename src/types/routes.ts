@@ -152,6 +152,18 @@ export interface NormalizedEvent {
 }
 
 /**
+ * JWT verification configuration for a Cognito User Pool
+ */
+export interface JwtVerificationPoolConfig {
+  /** Cognito User Pool ID (e.g., "us-east-1_ABC123") */
+  userPoolId: string;
+  /** App Client ID(s). Pass null to skip client ID verification. */
+  clientId?: string | string[] | null;
+  /** Expected token use. Pass null to accept either. Defaults to null. */
+  tokenUse?: 'id' | 'access' | null;
+}
+
+/**
  * Orchestrator configuration options
  */
 export interface OrchestratorConfig {
@@ -161,7 +173,8 @@ export interface OrchestratorConfig {
   debug?: boolean;
 
   /**
-   * User Pool ID mappings for segment-based validation
+   * User Pool ID mappings for segment-based validation (issuer string only).
+   * @deprecated Use jwtVerification instead for cryptographic signature verification.
    */
   userPools?: {
     [K in RouteSegment]?: string;
@@ -186,4 +199,13 @@ export interface OrchestratorConfig {
    * Automatically extract identity from Authorization header if no authorizer is present
    */
   autoExtractIdentity?: boolean;
+
+  /**
+   * JWT signature verification configuration.
+   * When provided for a segment, JWTs from the Authorization header
+   * are cryptographically verified against the Cognito JWKS endpoint.
+   */
+  jwtVerification?: {
+    [K in RouteSegment]?: JwtVerificationPoolConfig;
+  };
 }

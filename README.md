@@ -10,7 +10,7 @@ A lightweight, type-safe event dispatcher and middleware orchestrator for AWS La
 - **Multi-Trigger Support**: Handle HTTP (API Gateway), SQS, EventBridge, and Lambda invocations with a single handler
 - **Segmented Routing**: Organize routes by security context (`public`, `private`, `backoffice`, `internal`)
 - **Path Parameters**: Built-in support for dynamic routes like `/users/{id}`
-- **Identity Aware**: Automatic Cognito User Pool validation per segment and optional JWT extraction from headers
+- **Identity Aware**: Cryptographic JWT signature verification via `aws-jwt-verify`, Cognito User Pool validation per segment
 - **Middleware Support**: Global and per-segment middleware chains
 - **Zero Config CORS**: Built-in CORS handling with sensible defaults
 - **Response Utilities**: Standardized response helpers (success, error, etc.)
@@ -111,10 +111,17 @@ const routes: SegmentedHttpRouter = {
 export const handler = async (event: any) => {
   return dispatchEvent(event, { apigateway: routes }, {
     debug: process.env.DEBUG === 'true',
-    userPools: {
-      private: process.env.USER_POOL_ID,
-      backoffice: process.env.ADMIN_POOL_ID
-    }
+    autoExtractIdentity: true,
+    jwtVerification: {
+      private: {
+        userPoolId: process.env.USER_POOL_ID!,
+        clientId: null,
+      },
+      backoffice: {
+        userPoolId: process.env.ADMIN_POOL_ID!,
+        clientId: null,
+      },
+    },
   });
 };
 ```
@@ -239,29 +246,68 @@ customErrorResponse(MyErrorCodes.QUOTA_EXCEEDED, 'API quota exceeded', codeToSta
 
 ## Identity & Security
 
-Extract and validate Cognito claims:
+### JWT Signature Verification (v2.0+)
+
+JWTs from the `Authorization` header are cryptographically verified against Cognito's JWKS endpoint using [`aws-jwt-verify`](https://github.com/awslabs/aws-jwt-verify). This prevents accepting fabricated tokens with arbitrary claims.
 
 ```typescript
-import { 
-  extractIdentity, 
-  hasAnyGroup, 
-  hasAllGroups,
-  validateIssuer 
+export const handler = async (event: any) => {
+  return dispatchEvent(event, { apigateway: routes }, {
+    autoExtractIdentity: true,
+    jwtVerification: {
+      // Verify tokens for private routes against the Portal User Pool
+      private: {
+        userPoolId: process.env.COGNITO_PORTAL_USER_POOL_ID!,
+        clientId: null,         // null = skip client ID check
+      },
+      // Verify tokens for backoffice routes against the Backoffice User Pool
+      backoffice: {
+        userPoolId: process.env.COGNITO_BACKOFFICE_USER_POOL_ID!,
+        clientId: null,
+      },
+    },
+  });
+};
+```
+
+**How it works:**
+
+- If `event.requestContext.authorizer.claims` exists (API Gateway authorizer), those claims are used directly (already verified by API Gateway)
+- If no authorizer claims exist and `autoExtractIdentity` + `jwtVerification` are configured, the `Authorization` header JWT is verified cryptographically
+- If verification fails, the dispatcher returns **401 Unauthorized**
+- Public and internal segments don't require `jwtVerification`
+- JWKS keys are cached at the module level (persists across Lambda warm starts)
+
+**`JwtVerificationPoolConfig` options:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `userPoolId` | `string` | Cognito User Pool ID (e.g., `us-east-1_ABC123`) |
+| `clientId` | `string \| string[] \| null` | App Client ID(s). `null` to skip client ID verification |
+| `tokenUse` | `'id' \| 'access' \| null` | Expected token type. `null` to accept either |
+
+### Working with Identity in Handlers
+
+```typescript
+import {
+  hasAnyGroup,
+  hasAllGroups
 } from 'serverless-event-orchestrator';
 
 const myHandler = async (event: NormalizedEvent) => {
   const identity = event.context.identity;
-  
+
   // Access user info
   console.log(identity?.userId);   // Cognito sub
   console.log(identity?.email);    // User email
   console.log(identity?.groups);   // Cognito groups
-  
+  console.log(identity?.claims);   // All JWT claims
+
   // Check groups
   if (hasAnyGroup(identity, ['Admins', 'Moderators'])) {
     // User has admin or moderator role
   }
-  
+
   if (hasAllGroups(identity, ['Premium', 'Verified'])) {
     // User has both premium and verified status
   }
@@ -296,14 +342,19 @@ const config: OrchestratorConfig = {
   // Enable debug logging
   debug: process.env.NODE_ENV !== 'production',
   
-  // Automatically extract identity from Authorization header if no authorizer is present
-  // Useful when you don't use Cognito Authorizers in API Gateway
+  // Extract identity from Authorization header JWT
   autoExtractIdentity: true,
-  
-  // User Pool validation per segment
-  userPools: {
-    private: 'us-east-1_ABC123',
-    backoffice: 'us-east-1_XYZ789'
+
+  // JWT signature verification per segment (v2.0+)
+  jwtVerification: {
+    private: {
+      userPoolId: 'us-east-1_ABC123',
+      clientId: null,
+    },
+    backoffice: {
+      userPoolId: 'us-east-1_XYZ789',
+      clientId: null,
+    },
   },
   
   // Global middleware (runs for all routes)
@@ -354,7 +405,8 @@ export const handler = async (event: any) => {
 
 | Function | Description |
 |----------|-------------|
-| `extractIdentity(event)` | Extracts Cognito claims from event |
+| `extractIdentity(event, options?)` | Extracts and verifies Cognito claims (async) |
+| `verifyJwt(token, poolConfig)` | Verifies a JWT against Cognito JWKS |
 | `validateIssuer(identity, userPoolId)` | Validates token issuer |
 | `hasAnyGroup(identity, groups)` | Checks if user has any of the groups |
 | `hasAllGroups(identity, groups)` | Checks if user has all groups |
@@ -372,6 +424,7 @@ import type {
   IdentityContext,
   RouteConfig,
   OrchestratorConfig,
+  JwtVerificationPoolConfig,
   MiddlewareFn
 } from 'serverless-event-orchestrator';
 ```
