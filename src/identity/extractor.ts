@@ -84,21 +84,51 @@ export async function extractIdentity(event: any, optionsOrAutoExtract?: boolean
     return buildIdentity(claims);
   }
 
-  // If autoExtract is enabled and jwtVerificationConfig is provided, verify the Authorization header
-  if (autoExtract && jwtVerificationConfig) {
+  // If autoExtract is enabled, extract identity from Authorization header
+  if (autoExtract) {
     const authHeader = event?.headers?.authorization || event?.headers?.Authorization;
     if (authHeader) {
-      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-      const verifiedClaims = await verifyJwt(token, jwtVerificationConfig);
-      if (verifiedClaims) {
-        return buildIdentity(verifiedClaims);
+      // If jwtVerificationConfig is provided, verify signature cryptographically
+      if (jwtVerificationConfig) {
+        const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+        const verifiedClaims = await verifyJwt(token, jwtVerificationConfig);
+        if (verifiedClaims) {
+          return buildIdentity(verifiedClaims);
+        }
+        // Verification failed → return undefined (caller will return 401)
+        return undefined;
       }
-      // Verification failed → return undefined (caller will return 401)
-      return undefined;
+
+      // No jwtVerificationConfig → decode-only fallback (no signature verification)
+      const decoded = decodeJwtFromHeader(authHeader);
+      if (decoded) {
+        return buildIdentity(decoded);
+      }
     }
   }
 
   return undefined;
+}
+
+/**
+ * Decodes a JWT from the Authorization header without validating signature
+ * @param authHeader - The Authorization header value (e.g., "Bearer eyJ...")
+ */
+function decodeJwtFromHeader(authHeader: string): Record<string, any> | undefined {
+  try {
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+    const parts = token.split('.');
+    if (parts.length !== 3) return undefined;
+
+    const payload = parts[1];
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
+
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    console.error('[SEO] Error decoding JWT from header:', error);
+    return undefined;
+  }
 }
 
 /**
