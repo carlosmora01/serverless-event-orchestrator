@@ -168,7 +168,7 @@ describe('extractIdentity', () => {
     expect(await extractIdentity(event)).toBeUndefined();
   });
 
-  it('should NOT extract identity from Authorization header with autoExtract but without jwtVerificationConfig', async () => {
+  it('should extract identity from Authorization header with autoExtract using decode-only fallback', async () => {
     const payload = {
       sub: 'user-header',
       email: 'header@example.com',
@@ -184,9 +184,15 @@ describe('extractIdentity', () => {
       }
     };
 
-    // Without jwtVerificationConfig, autoExtract alone should NOT decode the token
+    // Without jwtVerificationConfig, autoExtract decodes the token without signature verification
     const identity = await extractIdentity(event, true);
-    expect(identity).toBeUndefined();
+    expect(identity).toEqual({
+      userId: 'user-header',
+      email: 'header@example.com',
+      groups: ['Admin'],
+      issuer: 'https://cognito-idp.com',
+      claims: payload
+    });
   });
 
   it('should not extract from Authorization header when autoExtract is false', async () => {
