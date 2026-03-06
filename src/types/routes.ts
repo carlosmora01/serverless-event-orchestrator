@@ -99,6 +99,12 @@ export type LambdaRoutes = Record<string, (event: NormalizedEvent) => Promise<an
 export type SqsRoutes = Record<string, (event: NormalizedEvent) => Promise<any>>;
 
 /**
+ * Scheduled event routes (EventBridge Scheduler / CloudWatch Events rules)
+ * Maps rule names to handlers. Use 'default' as fallback.
+ */
+export type ScheduledRoutes = Record<string, (event: NormalizedEvent) => Promise<any>>;
+
+/**
  * Complete dispatch routes configuration
  */
 export interface DispatchRoutes {
@@ -106,6 +112,7 @@ export interface DispatchRoutes {
   eventbridge?: EventBridgeRoutes;
   lambda?: LambdaRoutes;
   sqs?: SqsRoutes;
+  scheduled?: ScheduledRoutes;
 }
 
 /**

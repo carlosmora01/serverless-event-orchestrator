@@ -28,6 +28,7 @@ export {
   EventBridgeRoutes,
   LambdaRoutes,
   SqsRoutes,
+  ScheduledRoutes,
   DispatchRoutes,
   IdentityContext,
   RouteMatch,

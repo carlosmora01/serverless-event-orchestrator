@@ -6,6 +6,7 @@ export enum EventType {
   ApiGateway = 'apigateway',
   Lambda = 'lambda',
   Sqs = 'sqs',
+  Scheduled = 'scheduled',
   Unknown = 'unknown',
 }
 

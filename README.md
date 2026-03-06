@@ -7,7 +7,7 @@ A lightweight, type-safe event dispatcher and middleware orchestrator for AWS La
 
 ## Features
 
-- **Multi-Trigger Support**: Handle HTTP (API Gateway), SQS, EventBridge, and Lambda invocations with a single handler
+- **Multi-Trigger Support**: Handle HTTP (API Gateway), SQS, EventBridge, Scheduled Events (cron/rate), and Lambda invocations with a single handler
 - **Segmented Routing**: Organize routes by security context (`public`, `private`, `backoffice`, `internal`)
 - **Path Parameters**: Built-in support for dynamic routes like `/users/{id}`
 - **Identity Aware**: Cryptographic JWT signature verification via `aws-jwt-verify`, Cognito User Pool validation per segment
@@ -193,12 +193,66 @@ const routes: DispatchRoutes = {
     default: async (event: NormalizedEvent) => {
       console.log('Unknown queue message:', event.payload.body);
     }
+  },
+
+  // Scheduled events (EventBridge Scheduler / CloudWatch Events rules)
+  scheduled: {
+    // Route by rule name (extracted from the event's resources ARN)
+    'MyDailyCronRule': async (event: NormalizedEvent) => {
+      console.log('Daily cron triggered, rule:', event.params.ruleName);
+    },
+    // Fallback for any unmatched scheduled event
+    default: async (event: NormalizedEvent) => {
+      console.log('Scheduled event:', event.params.ruleName);
+    }
   }
 };
 
 export const handler = async (event: any) => {
   return dispatchEvent(event, routes);
 };
+```
+
+## Scheduled Events
+
+Supports EventBridge Scheduler and CloudWatch Events rules (cron/rate expressions). Events with `source: "aws.events"` and `detail-type: "Scheduled Event"` are automatically detected and routed.
+
+```typescript
+import { dispatchEvent, DispatchRoutes, ScheduledRoutes } from 'serverless-event-orchestrator';
+
+const scheduledRouter: ScheduledRoutes = {
+  // Route by rule name (extracted from resources ARN)
+  'PropertyExpirationSchedule': async (event) => {
+    // Run expiration logic
+    return { statusCode: 200, body: 'OK' };
+  },
+  // Fallback handler
+  default: async (event) => {
+    console.log('Unhandled scheduled event:', event.params.ruleName);
+  }
+};
+
+const routes: DispatchRoutes = {
+  apigateway: httpRouter,
+  scheduled: scheduledRouter,
+};
+```
+
+**How routing works:**
+- The rule name is extracted from `event.resources[0]` (the last segment after `/` in the ARN)
+- First tries to match by exact rule name, then falls back to `default`
+- The rule name is available in `event.params.ruleName`
+- Scheduled events are assigned `segment: "internal"` (no authentication required)
+
+**SAM template example:**
+```yaml
+Events:
+  MyCronRule:
+    Type: Schedule
+    Properties:
+      Schedule: "cron(0 7 * * ? *)"
+      Description: "Run daily at 07:00 UTC"
+      Enabled: true
 ```
 
 ## Response Utilities
@@ -425,7 +479,8 @@ import type {
   RouteConfig,
   OrchestratorConfig,
   JwtVerificationPoolConfig,
-  MiddlewareFn
+  MiddlewareFn,
+  ScheduledRoutes
 } from 'serverless-event-orchestrator';
 ```
 

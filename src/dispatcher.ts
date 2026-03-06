@@ -23,6 +23,7 @@ import { forbiddenResponse, badRequestResponse, notFoundResponse, unauthorizedRe
  * Detects the type of AWS event
  */
 export function detectEventType(event: any): EventType {
+  if (event.source === 'aws.events' && event['detail-type'] === 'Scheduled Event') return EventType.Scheduled;
   if (event.source === 'EVENT_BRIDGE') return EventType.EventBridge;
   if (event.requestContext && event.httpMethod) return EventType.ApiGateway;
   if (event.Records && Array.isArray(event.Records) && event.Records[0]?.eventSource === 'aws:sqs') return EventType.Sqs;
@@ -216,6 +217,28 @@ function normalizeSqsEvent(event: any): NormalizedEvent {
     context: {
       segment: RouteSegment.Internal,
       requestId: record.messageId,
+    },
+  };
+}
+
+/**
+ * Normalizes a Scheduled event (EventBridge Scheduler / CloudWatch Events rule)
+ */
+function normalizeScheduledEvent(event: any): NormalizedEvent {
+  // Extract rule name from resources ARN: arn:aws:events:region:account:rule/RuleName
+  const ruleArn = event.resources?.[0];
+  const ruleName = ruleArn?.split('/')?.pop() ?? 'default';
+
+  return {
+    eventRaw: event,
+    eventType: EventType.Scheduled,
+    payload: {
+      body: event.detail ?? {},
+    },
+    params: { ruleName },
+    context: {
+      segment: RouteSegment.Internal,
+      requestId: event.id,
     },
   };
 }
@@ -454,6 +477,22 @@ export async function dispatchEvent(
     return applyCorsToResponse(handlerResponse);
   }
   
+  // Handle Scheduled events (EventBridge Scheduler / CloudWatch Events rules)
+  if (type === EventType.Scheduled) {
+    const normalized = normalizeScheduledEvent(event);
+    const ruleName = normalized.params.ruleName;
+    const handler = routes.scheduled?.[ruleName] ?? routes.scheduled?.default;
+
+    if (!handler) {
+      if (debug) {
+        console.log('[SEO] No Scheduled handler for rule:', ruleName);
+      }
+      return { statusCode: 404, body: 'Scheduled handler not found' };
+    }
+
+    return handler(normalized);
+  }
+
   // Handle EventBridge events
   if (type === EventType.EventBridge) {
     const operationName = event.detail?.operationName;
