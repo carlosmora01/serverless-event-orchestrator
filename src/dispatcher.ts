@@ -20,15 +20,37 @@ import type { JwtVerificationPoolConfig } from './types/routes.js';
 import { forbiddenResponse, badRequestResponse, notFoundResponse, unauthorizedResponse } from './http/response.js';
 
 /**
- * Detects the type of AWS event
+ * Detects the type of AWS event.
+ *
+ * EventBridge detection: AWS EventBridge events tienen una estructura
+ * estándar con `version: '0'`, `id`, `source`, `detail-type` y `detail`.
+ * El `source` lo setea el productor (cualquier string), no es un magic value
+ * fijo — por eso se detecta por estructura, no por valor del source.
  */
 export function detectEventType(event: any): EventType {
   if (event.source === 'aws.events' && event['detail-type'] === 'Scheduled Event') return EventType.Scheduled;
-  if (event.source === 'EVENT_BRIDGE') return EventType.EventBridge;
+  if (isEventBridgeEvent(event)) return EventType.EventBridge;
   if (event.requestContext && event.httpMethod) return EventType.ApiGateway;
   if (event.Records && Array.isArray(event.Records) && event.Records[0]?.eventSource === 'aws:sqs') return EventType.Sqs;
   if (event.awsRequestId) return EventType.Lambda;
   return EventType.Unknown;
+}
+
+/**
+ * True if the event has the structural shape of an AWS EventBridge event.
+ * EventBridge events siempre tienen estos campos:
+ *   version: '0', id, source, detail-type, detail, account, region, time
+ */
+function isEventBridgeEvent(event: any): boolean {
+  return (
+    event &&
+    typeof event === 'object' &&
+    event.version === '0' &&
+    typeof event.id === 'string' &&
+    typeof event.source === 'string' &&
+    typeof event['detail-type'] === 'string' &&
+    event.detail !== undefined
+  );
 }
 
 /**
@@ -493,20 +515,26 @@ export async function dispatchEvent(
     return handler(normalized);
   }
 
-  // Handle EventBridge events
+  // Handle EventBridge events.
+  //
+  // Routing prioriza el campo nativo de AWS `detail-type` (estándar EventBridge),
+  // con fallback a `detail.operationName` (convención legacy de versiones <2.3
+  // de esta librería). Si ninguno matchea, cae a `routes.eventbridge.default`.
   if (type === EventType.EventBridge) {
-    const operationName = event.detail?.operationName;
-    const handler = operationName
-      ? routes.eventbridge?.[operationName] ?? routes.eventbridge?.default
-      : routes.eventbridge?.default;
-    
+    const detailType: string | undefined = event['detail-type'];
+    const operationName: string | undefined = event.detail?.operationName;
+    const handler =
+      (detailType ? routes.eventbridge?.[detailType] : undefined)
+      ?? (operationName ? routes.eventbridge?.[operationName] : undefined)
+      ?? routes.eventbridge?.default;
+
     if (!handler) {
       if (debug) {
-        console.log('[SEO] No EventBridge handler for:', operationName);
+        console.log('[SEO] No EventBridge handler for:', { detailType, operationName });
       }
       return { statusCode: 404, body: 'EventBridge handler not found' };
     }
-    
+
     const normalized = normalizeEventBridgeEvent(event);
     return handler(normalized);
   }

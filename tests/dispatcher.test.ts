@@ -3,9 +3,35 @@ import { EventType, RouteSegment } from '../src/types/event-type.enum';
 import { SegmentedHttpRouter, DispatchRoutes, NormalizedEvent } from '../src/types/routes';
 
 describe('detectEventType', () => {
-  it('should detect EventBridge events', () => {
-    const event = { source: 'EVENT_BRIDGE', detail: { operationName: 'test' } };
+  it('should detect EventBridge events by structural shape (any source)', () => {
+    const event = {
+      version: '0',
+      id: 'evt-12345',
+      source: 'envivienda.domain',
+      'detail-type': 'agency.member.requested',
+      detail: { foo: 'bar' },
+      account: '123',
+      region: 'us-east-1',
+      time: '2026-05-05T05:00:00Z',
+      resources: [],
+    };
     expect(detectEventType(event)).toBe(EventType.EventBridge);
+  });
+
+  it('should not confuse Scheduled events with EventBridge events', () => {
+    const event = {
+      version: '0',
+      id: 'evt-12345',
+      source: 'aws.events',
+      'detail-type': 'Scheduled Event',
+      detail: {},
+    };
+    expect(detectEventType(event)).toBe(EventType.Scheduled);
+  });
+
+  it('should NOT detect plain objects as EventBridge', () => {
+    expect(detectEventType({ source: 'foo', detail: {} })).toBe(EventType.Unknown);
+    expect(detectEventType({ version: '0', id: '1' })).toBe(EventType.Unknown);
   });
 
   it('should detect API Gateway events', () => {
@@ -220,38 +246,92 @@ describe('dispatchEvent - EventBridge', () => {
     mockHandler.mockClear();
   });
 
-  it('should dispatch to named operation handler', async () => {
+  /** Helper: builds a realistic EventBridge event envelope. */
+  const buildEvent = (overrides: Record<string, any> = {}) => ({
+    version: '0',
+    id: 'evt-12345',
+    source: 'envivienda.domain',
+    'detail-type': 'user.created',
+    detail: { userId: '123' },
+    account: '123456789012',
+    region: 'us-east-1',
+    time: '2026-05-05T05:00:00Z',
+    resources: [],
+    ...overrides,
+  });
+
+  it('should dispatch by detail-type (AWS native field)', async () => {
     const routes: DispatchRoutes = {
-      eventbridge: {
-        'user.created': mockHandler
-      }
+      eventbridge: { 'user.created': mockHandler },
     };
 
-    const event = {
-      source: 'EVENT_BRIDGE',
-      detail: { operationName: 'user.created', userId: '123' }
+    await dispatchEvent(buildEvent(), routes);
+
+    expect(mockHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('should fallback to detail.operationName for legacy compat', async () => {
+    const routes: DispatchRoutes = {
+      eventbridge: { 'user.created.legacy': mockHandler },
     };
+
+    // Event sin detail-type apropiado pero con operationName legacy
+    const event = buildEvent({
+      'detail-type': 'something.else',
+      detail: { operationName: 'user.created.legacy' },
+    });
 
     await dispatchEvent(event, routes);
 
     expect(mockHandler).toHaveBeenCalledTimes(1);
   });
 
-  it('should fallback to default handler', async () => {
+  it('should prefer detail-type over operationName when both are present', async () => {
+    const detailTypeHandler = jest.fn().mockResolvedValue({ via: 'detail-type' });
+    const opNameHandler = jest.fn().mockResolvedValue({ via: 'opName' });
+
     const routes: DispatchRoutes = {
       eventbridge: {
-        default: mockHandler
-      }
+        'preferred.via.detail-type': detailTypeHandler,
+        'fallback.via.opName': opNameHandler,
+      },
     };
 
-    const event = {
-      source: 'EVENT_BRIDGE',
-      detail: { operationName: 'unknown.event' }
+    const event = buildEvent({
+      'detail-type': 'preferred.via.detail-type',
+      detail: { operationName: 'fallback.via.opName' },
+    });
+
+    await dispatchEvent(event, routes);
+
+    expect(detailTypeHandler).toHaveBeenCalledTimes(1);
+    expect(opNameHandler).not.toHaveBeenCalled();
+  });
+
+  it('should fallback to default handler when nothing matches', async () => {
+    const routes: DispatchRoutes = {
+      eventbridge: { default: mockHandler },
     };
+
+    const event = buildEvent({
+      'detail-type': 'no.such.type',
+      detail: {},
+    });
 
     await dispatchEvent(event, routes);
 
     expect(mockHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('should pass detail as payload.body to the handler', async () => {
+    const routes: DispatchRoutes = {
+      eventbridge: { 'user.created': mockHandler },
+    };
+
+    await dispatchEvent(buildEvent(), routes);
+
+    const passedEvent = mockHandler.mock.calls[0][0];
+    expect(passedEvent.payload.body).toEqual({ userId: '123' });
   });
 });
 
