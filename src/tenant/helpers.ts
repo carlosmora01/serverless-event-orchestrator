@@ -29,7 +29,7 @@ export function tenantInfoFromClaims(claims: Record<string, any>): TenantInfo | 
   const countryCode = getClaim(claims, 'countryCode');
   const personProfileId = getClaim(claims, 'personProfileId');
   const orgProfileId = getClaim(claims, 'orgProfileId');
-  const hasCRM = getClaim(claims, 'hasCRM');
+  const hasCRM = getClaim(claims, 'hasCRM') === 'true';
 
   if (!tenantId || !tenantType || !userId || !countryCode) {
     return undefined;
