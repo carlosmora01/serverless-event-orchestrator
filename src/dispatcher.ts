@@ -485,6 +485,13 @@ export async function dispatchEvent(
       if (routeMatch.middleware?.length) {
         normalized = await executeMiddleware(routeMatch.middleware, normalized);
       }
+
+      // Execute per-route middleware (RouteConfig.middleware) — runs LAST,
+      // after global and segment middleware, so route-level guards like
+      // requirePermission(...) and crmGuard see a fully-initialized context.
+      if (routeMatch.config.middleware?.length) {
+        normalized = await executeMiddleware(routeMatch.config.middleware, normalized);
+      }
     } catch (thrown) {
       // If middleware threw an HttpResponse (e.g., forbiddenResponse from tenantGuard), return it
       if (isHttpResponse(thrown)) {

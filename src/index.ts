@@ -125,4 +125,6 @@ export {
   initTenantContext,
   tenantGuard,
   crmGuard,
+  requirePermission,
+  requireFeature,
 } from './middleware/index.js';

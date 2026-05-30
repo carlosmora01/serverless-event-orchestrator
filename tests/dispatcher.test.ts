@@ -679,6 +679,108 @@ describe('dispatchEvent - User Pool Validation', () => {
   });
 });
 
+describe('dispatchEvent - Per-Route Middleware (RouteConfig.middleware)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should execute middleware declared on an individual route', async () => {
+    const handler = jest.fn().mockResolvedValue({ statusCode: 200, body: '{}' });
+    const routeMw = jest.fn().mockImplementation((event: NormalizedEvent) => event);
+
+    const routes: DispatchRoutes = {
+      apigateway: {
+        private: {
+          get: {
+            '/profile': { handler, middleware: [routeMw] },
+          },
+        },
+      } as SegmentedHttpRouter,
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/profile',
+      path: '/profile',
+      headers: {},
+      body: null,
+    };
+
+    await dispatchEvent(event, routes);
+
+    expect(routeMw).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('should run middleware in order: global -> segment -> route', async () => {
+    const callOrder: string[] = [];
+    const globalMw = jest.fn().mockImplementation((e: NormalizedEvent) => { callOrder.push('global'); return e; });
+    const segmentMw = jest.fn().mockImplementation((e: NormalizedEvent) => { callOrder.push('segment'); return e; });
+    const routeMw = jest.fn().mockImplementation((e: NormalizedEvent) => { callOrder.push('route'); return e; });
+    const handler = jest.fn().mockImplementation((_e: NormalizedEvent) => { callOrder.push('handler'); return { statusCode: 200, body: '{}' }; });
+
+    const routes: DispatchRoutes = {
+      apigateway: {
+        private: {
+          middleware: [segmentMw],
+          routes: {
+            get: {
+              '/profile': { handler, middleware: [routeMw] },
+            },
+          },
+        },
+      } as any,
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'GET',
+      resource: '/profile',
+      path: '/profile',
+      headers: {},
+      body: null,
+    };
+
+    await dispatchEvent(event, routes, { globalMiddleware: [globalMw] });
+
+    expect(callOrder).toEqual(['global', 'segment', 'route', 'handler']);
+  });
+
+  it('should short-circuit and return the HttpResponse a per-route middleware throws', async () => {
+    const handler = jest.fn().mockResolvedValue({ statusCode: 200, body: '{}' });
+    const blockingMw = jest.fn().mockImplementation(async () => {
+      throw { statusCode: 403, body: JSON.stringify({ status: 403, code: 'PERMISSION_DENIED' }) };
+    });
+
+    const routes: DispatchRoutes = {
+      apigateway: {
+        backoffice: {
+          post: {
+            '/backoffice/plans': { handler, middleware: [blockingMw] },
+          },
+        },
+      } as SegmentedHttpRouter,
+    };
+
+    const event = {
+      requestContext: { requestId: '123' },
+      httpMethod: 'POST',
+      resource: '/backoffice/plans',
+      path: '/backoffice/plans',
+      headers: {},
+      body: null,
+    };
+
+    const result = await dispatchEvent(event, routes);
+
+    expect(blockingMw).toHaveBeenCalledTimes(1);
+    expect(handler).not.toHaveBeenCalled();
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).code).toBe('PERMISSION_DENIED');
+  });
+});
+
 describe('dispatchEvent - Internal Segment', () => {
   const mockHandler = jest.fn().mockResolvedValue({ statusCode: 200, body: '{}' });
 
